@@ -1,0 +1,34 @@
+spring:
+  application:
+    name: fraud-rule-engine
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+  threads:
+    virtual:
+      enabled: true  # Java 25 virtual threads — higher throughput for concurrent I/O operations
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true  # exposes /actuator/health/liveness and /actuator/health/readiness for Kubernetes
+  health:
+    livenessState:
+      enabled: true
+    readinessState:
+      enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  tracing:
+    sampling:
+      probability: 1.0  # sample every request — reduce in production (e.g. 0.1)
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    try-it-out-enabled: true

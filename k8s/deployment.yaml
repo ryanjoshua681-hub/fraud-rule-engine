@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fraud-rule-engine
+  labels:
+    app: fraud-rule-engine
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: fraud-rule-engine
+  template:
+    metadata:
+      labels:
+        app: fraud-rule-engine
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/actuator/prometheus"
+        prometheus.io/port: "8080"
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsNonRoot: true
+      containers:
+        - name: fraud-rule-engine
+          image: fraud-rule-engine:1.0.0
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: fraud-rule-engine-config
+            - secretRef:
+                name: fraud-rule-engine-secrets
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
