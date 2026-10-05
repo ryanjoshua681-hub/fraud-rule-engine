@@ -1,0 +1,48 @@
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+  flyway:
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS}
+    producer:
+      retries: 3
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+
+# In k8s the datasource URL and credentials come from a Secret (see k8s/deployment.yaml).
+# OAuth2 tokens are issued by an external provider (e.g. Keycloak); configure the
+# issuer URI via the SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI secret.
+spring.security.oauth2.resourceserver.jwt:
+  issuer-uri: ${SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI:}
+
+app:
+  kafka:
+    outgoing:
+      topics:
+        raw-transactions: transactions.raw
+        fraud-flags: fraud.flags
+        dlq: transactions.dlq
+  rules:
+    high-value-threshold: ${APP_RULES_HIGH_VALUE_THRESHOLD:50000}
+    velocity-window-seconds: ${APP_RULES_VELOCITY_WINDOW_SECONDS:60}
+    velocity-max-transactions: ${APP_RULES_VELOCITY_MAX_TRANSACTIONS:5}
+    unusual-hours-start: ${APP_RULES_UNUSUAL_HOURS_START:23}
+    unusual-hours-end: ${APP_RULES_UNUSUAL_HOURS_END:5}
+    round-amount-threshold: ${APP_RULES_ROUND_AMOUNT_THRESHOLD:10000}
+    blacklisted-merchants: []
+
+logging:
+  level:
+    root: INFO
+    com.ryanm.fraudruleengine: INFO

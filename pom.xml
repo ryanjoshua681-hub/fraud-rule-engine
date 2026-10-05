@@ -1,0 +1,476 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>4.0.6</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>com.ryanm</groupId>
+  <artifactId>fraud-rule-engine</artifactId>
+  <version>1.0.0</version>
+  <name>fraud-rule-engine</name>
+  <description>Real-time fraud detection service with configurable rule engine</description>
+
+  <properties>
+    <java.version>25</java.version>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+    <!-- Dependency versions not managed by Spring Boot parent -->
+    <mapstruct.version>1.6.3</mapstruct.version>
+    <lombok.version>1.18.38</lombok.version>
+    <lombok-mapstruct-binding.version>0.2.0</lombok-mapstruct-binding.version>
+    <!-- TODO: verify springdoc 3.x is available for Spring Boot 4.x before first build -->
+    <springdoc.version>2.8.6</springdoc.version>
+    <!-- spring-boot4 module not yet published to Maven Central; using spring-boot3 which compiles fine -->
+    <resilience4j.version>2.2.0</resilience4j.version>
+    <!-- Testcontainers not managed by Spring Boot 4 BOM — declared explicitly -->
+    <testcontainers.version>1.20.4</testcontainers.version>
+    <archunit.version>1.4.2</archunit.version>
+    <logstash-encoder.version>8.0</logstash-encoder.version>
+
+    <!-- Plugin versions -->
+    <spotless.version>3.9.0</spotless.version>
+    <dependency-check.version>10.0.4</dependency-check.version>
+    <pitest.version>1.16.1</pitest.version>
+    <pitest-junit5.version>1.2.1</pitest-junit5.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <!-- Resilience4j BOM — manages all resilience4j module versions -->
+      <dependency>
+        <groupId>io.github.resilience4j</groupId>
+        <artifactId>resilience4j-bom</artifactId>
+        <version>${resilience4j.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <!-- Testcontainers BOM — not managed by Spring Boot 4 parent -->
+      <dependency>
+        <groupId>org.testcontainers</groupId>
+        <artifactId>testcontainers-bom</artifactId>
+        <version>${testcontainers.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+
+    <!-- ================================================================
+             WEB
+             ================================================================ -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <!-- Bean Validation (Jakarta) — @Valid, @NotNull, @Size etc. on DTOs -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+
+    <!-- ================================================================
+             DATA — Spring Data JDBC (NOT JPA), PostgreSQL, Flyway
+             ================================================================ -->
+    <!-- Spring Data JDBC: explicit SQL, no lazy loading, no ORM magic. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-data-jdbc</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <!-- Flyway core + PostgreSQL dialect module (required separately in Flyway 10.x) -->
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-database-postgresql</artifactId>
+    </dependency>
+
+    <!-- ================================================================
+             CACHE
+             Redis:     velocity checks — atomic counters with TTL, sub-1ms reads
+             Caffeine:  local in-memory cache for rule config and reference data
+             ================================================================ -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-data-redis</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-cache</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.github.ben-manes.caffeine</groupId>
+      <artifactId>caffeine</artifactId>
+    </dependency>
+
+    <!-- ================================================================
+             SECURITY
+             Resource Server:      validates JWT tokens on inbound requests
+             Authorization Server: issues JWT tokens — makes the demo self-contained,
+                                   no external Keycloak needed
+             ================================================================ -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-security</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-oauth2-authorization-server</artifactId>
+    </dependency>
+
+    <!-- ================================================================
+             MESSAGING — Apache Kafka (KRaft mode in Docker Compose)
+             ================================================================ -->
+    <dependency>
+      <groupId>org.springframework.kafka</groupId>
+      <artifactId>spring-kafka</artifactId>
+    </dependency>
+
+    <!-- ================================================================
+             OBSERVABILITY
+             Actuator:              /health, /info, /metrics, liveness + readiness probes
+             Prometheus:            /actuator/prometheus endpoint for Grafana scraping
+             OTEL tracing bridge:   adds trace-id + span-id to every log line
+             OTLP exporter:         ships spans to any OTEL-compatible backend (Jaeger, Tempo)
+             ================================================================ -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-registry-prometheus</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-tracing-bridge-otel</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.opentelemetry</groupId>
+      <artifactId>opentelemetry-exporter-otlp</artifactId>
+    </dependency>
+
+    <!-- ================================================================
+             RESILIENCE — Circuit Breaker, Rate Limiter, Retry, Bulkhead
+             resilience4j-micrometer: exposes circuit breaker state as Prometheus metrics
+             ================================================================ -->
+    <!-- spring-boot4 module not yet on Maven Central; using spring-boot3 (compiles with Boot 4) -->
+    <dependency>
+      <groupId>io.github.resilience4j</groupId>
+      <artifactId>resilience4j-spring-boot3</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.github.resilience4j</groupId>
+      <artifactId>resilience4j-micrometer</artifactId>
+    </dependency>
+
+    <!-- ================================================================
+             API DOCUMENTATION — Swagger UI + OpenAPI 3
+             ================================================================ -->
+    <dependency>
+      <groupId>org.springdoc</groupId>
+      <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+      <version>${springdoc.version}</version>
+    </dependency>
+
+    <!-- ================================================================
+             LOGGING — Structured JSON logs (Logstash-compatible format)
+             Compatible with common log shippers such as fluent-bit.
+             Adds trace-id field automatically when OTEL tracing is active.
+             ================================================================ -->
+    <dependency>
+      <groupId>net.logstash.logback</groupId>
+      <artifactId>logstash-logback-encoder</artifactId>
+      <version>${logstash-encoder.version}</version>
+    </dependency>
+
+    <!-- ================================================================
+             CODE GENERATION — MapStruct (entity ↔ model ↔ DTO mapping)
+             Lombok is provided-scope: used only at compile time, not in the JAR
+             ================================================================ -->
+    <dependency>
+      <groupId>org.mapstruct</groupId>
+      <artifactId>mapstruct</artifactId>
+      <version>${mapstruct.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.projectlombok</groupId>
+      <artifactId>lombok</artifactId>
+      <version>${lombok.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <!-- Generates spring-configuration-metadata.json for IDE @ConfigurationProperties support -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-configuration-processor</artifactId>
+      <optional>true</optional>
+    </dependency>
+
+    <!-- ================================================================
+             TEST
+             ================================================================ -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.kafka</groupId>
+      <artifactId>spring-kafka-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.security</groupId>
+      <artifactId>spring-security-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- Spring Boot 4 moved TestRestTemplate to spring-boot-resttestclient and
+         @ServiceConnection to spring-boot-testcontainers; neither is in spring-boot-starter-test -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-resttestclient</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-testcontainers</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- Testcontainers: real PostgreSQL + Kafka in integration tests -->
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>postgresql</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>kafka</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- ArchUnit: architecture rules enforced as tests -->
+    <dependency>
+      <groupId>com.tngtech.archunit</groupId>
+      <artifactId>archunit-junit5</artifactId>
+      <version>${archunit.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <!-- H2: fast in-memory DB for unit tests that don't need Testcontainers -->
+    <dependency>
+      <groupId>com.h2database</groupId>
+      <artifactId>h2</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+  </dependencies>
+
+  <build>
+    <plugins>
+
+      <!-- Spring Boot fat JAR — excludes Lombok from the final artifact -->
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <configuration>
+          <excludes>
+            <exclude>
+              <groupId>org.projectlombok</groupId>
+              <artifactId>lombok</artifactId>
+            </exclude>
+          </excludes>
+        </configuration>
+      </plugin>
+
+      <!-- Compiler — wires up annotation processors in the correct order:
+                 Lombok must run before MapStruct so MapStruct sees Lombok-generated methods -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <!-- StructuredTaskScope is preview in Java 25; release flag required alongside enable-preview -->
+          <release>25</release>
+          <compilerArgs>
+            <arg>--enable-preview</arg>
+          </compilerArgs>
+          <annotationProcessorPaths>
+            <path>
+              <groupId>org.projectlombok</groupId>
+              <artifactId>lombok</artifactId>
+              <version>${lombok.version}</version>
+            </path>
+            <path>
+              <groupId>org.mapstruct</groupId>
+              <artifactId>mapstruct-processor</artifactId>
+              <version>${mapstruct.version}</version>
+            </path>
+            <path>
+              <groupId>org.projectlombok</groupId>
+              <artifactId>lombok-mapstruct-binding</artifactId>
+              <version>${lombok-mapstruct-binding.version}</version>
+            </path>
+          </annotationProcessorPaths>
+        </configuration>
+      </plugin>
+
+      <!-- Spotless — Palantir Java Format, runs on 'validate' phase.
+                 'apply' auto-fixes formatting; use 'check' in CI to fail on violations. -->
+      <plugin>
+        <groupId>com.diffplug.spotless</groupId>
+        <artifactId>spotless-maven-plugin</artifactId>
+        <version>${spotless.version}</version>
+        <configuration>
+          <java>
+            <palantirJavaFormat/>
+            <removeUnusedImports/>
+            <importOrder/>
+            <trimTrailingWhitespace/>
+            <endWithNewline/>
+          </java>
+          <pom>
+            <sortPom/>
+          </pom>
+        </configuration>
+        <executions>
+          <execution>
+            <id>spotless-apply</id>
+            <goals>
+              <goal>apply</goal>
+            </goals>
+            <phase>validate</phase>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Surefire — unit tests only. Integration tests are excluded here
+                 and picked up by Failsafe below. Convention: *IntegrationTest.java -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <argLine>--enable-preview</argLine>
+          <excludes>
+            <exclude>**/*IntegrationTest.java</exclude>
+          </excludes>
+        </configuration>
+      </plugin>
+
+      <!-- Failsafe — integration tests (*IntegrationTest.java).
+                 Runs in the integration-test phase after the app is packaged.
+                 These tests use Testcontainers for real Postgres and Kafka. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <configuration>
+          <argLine>--enable-preview</argLine>
+          <includes>
+            <include>**/*IntegrationTest.java</include>
+          </includes>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>integration-test</goal>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+    </plugins>
+  </build>
+
+  <!-- Security scan and mutation testing are slow — run them explicitly, not on every build -->
+  <profiles>
+
+    <!-- Run: mvn verify -P security
+             Downloads the NVD CVE database on first run (~2 min). Subsequent runs are cached. -->
+    <profile>
+      <id>security</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.owasp</groupId>
+            <artifactId>dependency-check-maven</artifactId>
+            <version>${dependency-check.version}</version>
+            <configuration>
+              <!-- Fail the build on any CVE with CVSS score >= 7 (high severity) -->
+              <failBuildOnCVSS>7</failBuildOnCVSS>
+            </configuration>
+            <executions>
+              <execution>
+                <goals>
+                  <goal>check</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <!-- Run: mvn test-compile org.pitest:pitest-maven:mutationCoverage -P mutation
+             Injects bugs into the rule engine and service code, then verifies tests catch them.
+             Target: 80% mutation score on rule and service packages. -->
+    <profile>
+      <id>mutation</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.pitest</groupId>
+            <artifactId>pitest-maven</artifactId>
+            <version>${pitest.version}</version>
+            <configuration>
+              <!-- Target only the core business logic — not controllers or config -->
+              <targetClasses>
+                <param>com.ryanm.fraudruleengine.rule.*</param>
+                <param>com.ryanm.fraudruleengine.service.*</param>
+              </targetClasses>
+              <targetTests>
+                <param>com.ryanm.fraudruleengine.*</param>
+              </targetTests>
+              <mutationThreshold>80</mutationThreshold>
+            </configuration>
+            <dependencies>
+              <dependency>
+                <groupId>org.pitest</groupId>
+                <artifactId>pitest-junit5-plugin</artifactId>
+                <version>${pitest-junit5.version}</version>
+              </dependency>
+            </dependencies>
+            <executions>
+              <execution>
+                <goals>
+                  <goal>mutationCoverage</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+  </profiles>
+
+</project>

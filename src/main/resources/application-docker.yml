@@ -1,0 +1,60 @@
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/frauddb}
+    username: ${SPRING_DATASOURCE_USERNAME:fraud_user}
+    password: ${SPRING_DATASOURCE_PASSWORD:fraud_pass}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+  flyway:
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+  kafka:
+    # Point at the INTERNAL listener (kafka:29092) so Kafka advertises the correct
+    # container-network address back to this container after bootstrap.
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:kafka:29092}
+    producer:
+      retries: 3
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+
+app:
+  kafka:
+    outgoing:
+      topics:
+        raw-transactions: transactions.raw
+        fraud-flags: fraud.flags
+        dlq: transactions.dlq
+  rules:
+    high-value-threshold: 50000
+    velocity-window-seconds: 60
+    velocity-max-transactions: 5
+    unusual-hours-start: 23
+    unusual-hours-end: 5
+    round-amount-threshold: 10000
+    blacklisted-merchants: []
+
+# Spring Authorization Server — issues JWT tokens for the docker environment.
+# Clients obtain a token at POST /oauth2/token with Basic auth (fraud-client:fraud-secret).
+spring.security.oauth2.authorizationserver:
+  client:
+    fraud-client:
+      registration:
+        client-id: fraud-client
+        client-secret: "{noop}fraud-secret"
+        client-authentication-methods:
+          - client_secret_basic
+        authorization-grant-types:
+          - client_credentials
+        scopes:
+          - fraud:read
+          - fraud:write
+
+logging:
+  level:
+    root: INFO
+    com.ryanm.fraudruleengine: DEBUG

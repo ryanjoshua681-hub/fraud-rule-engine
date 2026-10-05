@@ -1,0 +1,72 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/fraudengine
+    username: fraudengine
+    password: fraudengine
+    driver-class-name: org.postgresql.Driver
+  flyway:
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: fraud-rule-engine
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      properties:
+        spring.json.trusted.packages: "com.ryanm.fraudruleengine.*"
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+# Spring Authorization Server — issues JWT tokens for the demo.
+# In production this would point to Keycloak.
+spring.security.oauth2.authorizationserver:
+  client:
+    fraud-client:
+      registration:
+        client-id: fraud-client
+        client-secret: "{noop}fraud-secret"
+        client-authentication-methods:
+          - client_secret_basic
+        authorization-grant-types:
+          - client_credentials
+        scopes:
+          - fraud:read
+          - fraud:write
+
+infrastructure:
+  environment: local
+
+app:
+  kafka:
+    outgoing:
+      topics:
+        raw-transactions: ${infrastructure.environment}-transactions.raw
+        fraud-flags: ${infrastructure.environment}-fraud.flags
+        dlq: ${infrastructure.environment}-transactions.dlq
+  cache:
+    hours: 12
+    initial-capacity: 50
+    maximum-size: 300
+  rules:
+    high-value-threshold: 50000
+    velocity-window-seconds: 60
+    velocity-max-transactions: 5
+    unusual-hours-start: 23
+    unusual-hours-end: 5
+    round-amount-threshold: 10000
+    blacklisted-merchants: []
+
+logging:
+  level:
+    root: INFO
+    com.ryanm.fraudruleengine: DEBUG
